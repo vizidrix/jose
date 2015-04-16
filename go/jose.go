@@ -2,9 +2,11 @@
 package jose
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"time"
 )
 
@@ -13,10 +15,15 @@ var (
 	ErrInvalidFormat         = errors.New("unable to parse data structure")
 	ErrEmptyToken            = errors.New("cannot validate an empty token")
 	ErrInvalidAlgorithm      = errors.New("unable to use provided algorithm")
-	ErrInvalidToken          = errors.New("cannot encode invalid token")
+	ErrEncodeInvalidToken    = errors.New("cannot encode invalid token")
+	ErrDecodeInvalidToken    = errors.New("cannot decode invalid token")
 	ErrUnitializedToken      = errors.New("uninitialized token cannot be used")
 	ErrRequiredElementWasNil = errors.New("required token def element was nil")
 )
+
+const period = 46
+
+var period_slice = []byte{'.'}
 
 const ( // https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41#section-4.1.9
 	JOSE_JWT      = "JWT"
@@ -169,19 +176,111 @@ const (
 const TenMinutes = 10 * time.Minute
 
 // Decode parses, validates and extracts the state of the token, returning an error if any part fails
-func Decode(token []byte) (r TokenReader, err error) {
-	return nil, nil
+func Decode(token []byte, mods ...TokenModifier) (r *TokenDef, err error) {
+	t := NewEmptyToken()
+	mods = append(mods, Load(token))
+	t = t.Mod(mods...)
+	errs := t.GetErrors()
+	if errs != nil {
+		if _, ok := t.errors[ErrInvalidAlgorithm]; ok {
+			return nil, ErrInvalidAlgorithm
+		}
+		log.Printf("Decode [ %s ]", errs)
+		return nil, ErrDecodeInvalidToken
+	}
+	return t, nil
+}
+
+func Encode(t *TokenDef) ([]byte, error) {
+	if t.errors != nil {
+		return nil, ErrEncodeInvalidToken
+	}
+	h := &bytes.Buffer{}
+	if err := t.EncodeHeader(h); err != nil {
+		return nil, err
+	}
+	p := &bytes.Buffer{}
+	if err := t.EncodePayload(p); err != nil {
+		return nil, err
+	}
+	s := &bytes.Buffer{}
+	s.Write(bytes.TrimRight(h.Bytes(), "="))
+	s.WriteByte(period)
+	// Encrypt p prior to signing
+	s.Write(bytes.TrimRight(p.Bytes(), "="))
+	//log.Printf("SigData: [ %s ]", s.Bytes())
+
+	s.WriteByte(period)
+	// Append signature
+	//log.Printf("Token: [ %s ]", s.Bytes())
+	return s.Bytes(), nil
 }
 
 func New(mods ...TokenModifier) *TokenDef {
-	return NewTokenDef().Mod(mods...)
+	return NewEmptyToken().Mod(mods...)
 }
 
+/*
 func HMAC256(secret string) TokenModifier {
 	return func(t *TokenDef) error {
 		return nil
 	}
 }
+*/
+
+func Load(token []byte) TokenModifier {
+	return func(t *TokenDef) error {
+		segs := bytes.Split(token, period_slice)
+		if len(segs) != 3 {
+			log.Printf("Seg Count [ %s ]", segs)
+			return ErrDecodeInvalidToken
+		}
+		h_len := len(segs[0])
+		p_len := len(segs[1])
+		d := token[:h_len+p_len+1]
+		log.Printf("\n\tT [ %s ] -> [ %d / %d ]\n\tData: [ %s ]\n", token, h_len, p_len, d)
+		s_len := len(segs[2])
+		if s_len == 0 { // None signature
+			if t.settings.CheckConstraints(None_Algo) { // Require explicit acceptance
+				return ErrInvalidAlgorithm
+			}
+		}
+		return nil
+	}
+}
+
+/*
+func Load2(token []byte) TokenModifier {
+	return func(t *TokenDef) error {
+		token_len := len(token)
+		data_len := bytes.LastIndex(token, period_slice)
+		//sig_len := token_len - data_len
+		//sig := make([]byte, 0, sig_len)
+		//data := make([]byte, 0, data_len)
+		log.Printf("\n* Load:\n[ %d ]\n[ %d ]\n\n", token_len, data_len)
+		if data_len < 0 { // Didn't find signature period
+			return ErrDecodeInvalidToken
+		}
+		if data_len > token_len { // Bounds check
+			return ErrDecodeInvalidToken
+		}
+		data := token[:data_len]
+		sig := token[data_len+1:]
+		// Verify signature
+		header_len := bytes.Index(data, period_slice)
+		if header_len < 0 { // Didn't find header period
+
+		}
+		payload_len := data_len - header_len
+
+		header := data[:header_len]
+		payload := data[header_len+1:]
+
+		log.Printf("\n* Load:\n[ %s ]\n[ %s ]\n\n", data, sig)
+		return nil
+	}
+}
+*/
 
 func UseConstraints(cs ...ConstraintFlags) TokenModifier {
 	return func(t *TokenDef) error {

@@ -1,7 +1,6 @@
 package jose
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -24,7 +23,7 @@ type TokenDef struct {
 
 var EmptyStruct = struct{}{}
 
-func NewTokenDef() *TokenDef {
+func NewEmptyToken() *TokenDef {
 	return &TokenDef{
 		settings: &Settings{
 			flags: Strict,
@@ -76,14 +75,23 @@ func WrapErr(message string, err error) error {
 }
 
 func (t *TokenDef) Mod(mods ...TokenModifier) (r *TokenDef) {
+	var err error
 	r = t.Clone()
 	for _, mod := range mods {
-		if err := mod(r); err != nil {
+		if err = mod(r); err != nil {
 			r.AppendError(err)
 		}
 	}
+	//log.Printf("\tMod.Token 1/2: [ %s ]\n\tw/ errors[%d] [ %#v ]", r.token, len(r.errors), r.errors)
 	// ToDo: validations and append to t.errors
-
+	if errs := r.GetErrors(); errs != nil {
+		return r
+	}
+	if r.token, err = r.Encode(); err != nil {
+		r.AppendError(err)
+		return r
+	}
+	//log.Printf("Mod.Token 2/2: [ %s ]", r.token)
 	return r
 }
 
@@ -93,33 +101,8 @@ func (t *TokenDef) Validate() (v_errs []error) {
 	return nil
 }
 
-const period = 46
-
-//var period = byte('.')
-
 func (t *TokenDef) Encode() (r []byte, err error) {
-	if t.errors != nil {
-		return nil, ErrInvalidToken
-	}
-	h := &bytes.Buffer{}
-	if err = t.EncodeHeader(h); err != nil {
-		return
-	}
-	p := &bytes.Buffer{}
-	if err = t.EncodePayload(p); err != nil {
-		return
-	}
-	s := &bytes.Buffer{}
-	s.Write(bytes.TrimRight(h.Bytes(), "="))
-	s.WriteByte(period)
-	// Encrypt p prior to signing
-	s.Write(bytes.TrimRight(p.Bytes(), "="))
-	log.Printf("SigData: [ %s ]", s.Bytes())
-
-	s.WriteByte(period)
-	// Append signature
-	log.Printf("Token: [ %s ]", s.Bytes())
-	return s.Bytes(), nil
+	return Encode(t)
 }
 
 func (t *TokenDef) GetToken() []byte {
@@ -127,10 +110,16 @@ func (t *TokenDef) GetToken() []byte {
 }
 
 func (t *TokenDef) GetErrors() []error {
+	if t == nil {
+		return []error{ErrRequiredElementWasNil}
+	}
 	if t.errors == nil {
 		return nil
 	}
 	l := len(t.errors)
+	if l == 0 {
+		return nil
+	}
 	i := 0
 	errs := make([]error, l, l)
 	for k, _ := range t.errors {
@@ -153,6 +142,10 @@ func (t *TokenDef) GetHeader() (r HeaderDef, err error) {
 }
 
 func (t *TokenDef) EncodeHeader(w io.Writer) (err error) {
+	if t == nil || t.header == nil {
+		err = ErrRequiredElementWasNil
+		return
+	}
 	var j []byte
 	if j, err = json.Marshal(t.header); err == nil {
 		enc := base64.NewEncoder(base64.URLEncoding, w)
@@ -214,6 +207,10 @@ func (t *TokenDef) GetPayload() (r PayloadDef, err error) {
 }
 
 func (t *TokenDef) EncodePayload(w io.Writer) (err error) {
+	if t == nil || t.payload == nil {
+		err = ErrRequiredElementWasNil
+		return
+	}
 	var j []byte
 	if j, err = json.Marshal(t.payload); err == nil {
 		enc := base64.NewEncoder(base64.URLEncoding, w)

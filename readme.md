@@ -1,5 +1,5 @@
 
-## JSON Object Signing and Encryption 2 (JOSE2)
+## JSON Object Signing and Encryption (JOSE)
 
 The goal of this implementation is to:
 - Provide a clean api for interacting with JOSE tokens
@@ -7,7 +7,7 @@ The goal of this implementation is to:
 	- [JWS Spec](https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41)
 	- [JWT Spec](http://self-issued.info/docs/draft-ietf-oauth-json-web-token.html)
 - Include header information in signature
-	- Avoid [Critical Security Vulnerabilities in JWT](https://auth0.com/blog/2015/03/31/critical-vulnerabilities-in-json-web-token-libraries/))
+	- Avoid [Critical Security Vulnerabilities in JWT](https://auth0.com/blog/2015/03/31/critical-vulnerabilities-in-json-web-token-libraries/)
 
 > Although many of the fields are strictly optional we recommend including unique and/or variable data in each token (i.e. at least one timestamp or a unique, random, nonce)
 

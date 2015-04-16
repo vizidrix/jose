@@ -78,7 +78,7 @@ func Test_Should_not_validate_empty_token(t *testing.T) {
 // j.HMAC256(secret)
 
 func Test_Should_initialize_TokenDef_with_correct_error(t *testing.T) {
-	jwt := j.NewTokenDef()
+	jwt := j.NewEmptyToken()
 	errs := jwt.GetErrors()
 	l := len(errs)
 	if l != 1 {
@@ -87,6 +87,27 @@ func Test_Should_initialize_TokenDef_with_correct_error(t *testing.T) {
 	}
 	if errs[0] != j.ErrUnitializedToken {
 		t.Errorf("Incorrect initial error state for new TokenDef [ %s ]", errs[0])
+	}
+}
+
+func Test_Should_return_error_for_unsupported_none_algo(t *testing.T) {
+	rem_none := j.RemoveConstraints(j.None_Algo)
+	jwt := j.New(rem_none)
+	jwt_parsed, err := j.Decode(jwt.GetToken())
+	if !ExpectError(t, j.ErrInvalidAlgorithm, err) {
+		return
+	}
+	if !ExpectErrors(t, jwt_parsed.GetErrors(), j.ErrInvalidAlgorithm) {
+		return
+	}
+}
+
+func Test_Should_parse_for_allowed_none_algo(t *testing.T) {
+	rem_none := j.RemoveConstraints(j.None_Algo)
+	jwt := j.New(rem_none)
+	_, err := j.Decode(jwt.GetToken(), rem_none)
+	if !ExpectNilError(t, "Decode token with none algo", err) {
+		return
 	}
 }
 
@@ -129,7 +150,7 @@ func Test_Should_build_and_parse_valid_token(t *testing.T) {
 	if !ExpectNilErrors(t, "Build valid token", jwt.GetErrors()) {
 		return
 	}
-	log.Printf("Token:\n[ %#v ]\n%s\n\n", jwt, jwt.GetToken())
+	log.Printf("\n* TokenDef:\n[ %#v ]\nToken: [ %s ]\n\n", jwt, jwt.GetToken())
 	jwt_parsed, err := j.Decode(jwt.GetToken())
 	if !ExpectNilError(t, "Parsing jwt token", err) {
 		return
