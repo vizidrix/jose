@@ -3,6 +3,7 @@ package jose
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,8 +23,17 @@ var (
 )
 
 const period = 46
+const equals = 61
 
 var period_slice = []byte{'.'}
+var equals_slice = []byte{'='}
+
+var base64_padding = map[int][]byte{
+	0: []byte{},
+	1: bytes.Repeat(equals_slice, 1),
+	2: bytes.Repeat(equals_slice, 2),
+	3: bytes.Repeat(equals_slice, 3),
+}
 
 const ( // https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41#section-4.1.9
 	JOSE_JWT      = "JWT"
@@ -228,59 +238,43 @@ func HMAC256(secret string) TokenModifier {
 }
 */
 
+func json_decode_trimmed_base64(l int, d []byte, t interface{}) (err error) {
+	m := l % 4
+	b := bytes.NewBuffer(make([]byte, 0, l+m))
+	b.Write(d)
+	b.Write(base64_padding[m])
+	r := base64.NewDecoder(base64.URLEncoding, b)
+	j := json.NewDecoder(r)
+	if err = j.Decode(t); err != nil {
+		return err
+	}
+	return nil
+}
+
 func Load(token []byte) TokenModifier {
 	return func(t *TokenDef) error {
+		var err error
 		segs := bytes.Split(token, period_slice)
 		if len(segs) != 3 {
-			log.Printf("Seg Count [ %s ]", segs)
 			return ErrDecodeInvalidToken
 		}
-		h_len := len(segs[0])
-		p_len := len(segs[1])
-		d := token[:h_len+p_len+1]
-		log.Printf("\n\tT [ %s ] -> [ %d / %d ]\n\tData: [ %s ]\n", token, h_len, p_len, d)
 		s_len := len(segs[2])
 		if s_len == 0 { // None signature
 			if t.settings.CheckConstraints(None_Algo) { // Require explicit acceptance
 				return ErrInvalidAlgorithm
 			}
 		}
+		h_len := len(segs[0])
+		p_len := len(segs[1])
+		if err = json_decode_trimmed_base64(h_len, segs[0], t.header); err != nil {
+			return err
+		}
+		if err = json_decode_trimmed_base64(p_len, segs[1], t.payload); err != nil {
+			return err
+		}
 		return nil
 	}
 }
-
-/*
-func Load2(token []byte) TokenModifier {
-	return func(t *TokenDef) error {
-		token_len := len(token)
-		data_len := bytes.LastIndex(token, period_slice)
-		//sig_len := token_len - data_len
-		//sig := make([]byte, 0, sig_len)
-		//data := make([]byte, 0, data_len)
-		log.Printf("\n* Load:\n[ %d ]\n[ %d ]\n\n", token_len, data_len)
-		if data_len < 0 { // Didn't find signature period
-			return ErrDecodeInvalidToken
-		}
-		if data_len > token_len { // Bounds check
-			return ErrDecodeInvalidToken
-		}
-		data := token[:data_len]
-		sig := token[data_len+1:]
-		// Verify signature
-		header_len := bytes.Index(data, period_slice)
-		if header_len < 0 { // Didn't find header period
-
-		}
-		payload_len := data_len - header_len
-
-		header := data[:header_len]
-		payload := data[header_len+1:]
-
-		log.Printf("\n* Load:\n[ %s ]\n[ %s ]\n\n", data, sig)
-		return nil
-	}
-}
-*/
 
 func UseConstraints(cs ...ConstraintFlags) TokenModifier {
 	return func(t *TokenDef) error {

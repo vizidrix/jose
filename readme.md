@@ -15,11 +15,11 @@ The goal of this implementation is to:
 
 [Message Signature or MAC Computation](https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41#section-5.1)
 
+> Make an empty JWS with None and decode it
+> { notice that explicitly enabling the algo is required in both encoding and decoding}
+
 ````
-var jose_token = "TOKEN_DATA.HEADER_DATA.PAYLOAD_DATA";
-var encoded_sections = jose_token.split(".");
-var verify_string = strings.Substring(jose_token, len(encoded_sections[0]));
-var data_verified = jose.VerifyToken(encoded_sections[0], verify_string);
-if !data_verified { Blow Up & Return }
-...
+rem_none := j.RemoveConstraints(j.None_Algo)
+jwt := j.New(rem_none)
+_, err := j.Decode(jwt.GetToken(), rem_none)
 ````

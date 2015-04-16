@@ -3,8 +3,7 @@ package jose_test
 import (
 	"fmt"
 	j "github.com/vizidrix/jose/go"
-	"log"
-	"reflect"
+	//"log"
 	"testing"
 	//"time"
 )
@@ -53,6 +52,8 @@ func ExpectNilErrors(t *testing.T, message string, errs []error) bool {
 	return true
 }
 
+var rem_none = j.RemoveConstraints(j.None_Algo)
+
 const secret = "secret"
 
 /*
@@ -91,7 +92,6 @@ func Test_Should_initialize_TokenDef_with_correct_error(t *testing.T) {
 }
 
 func Test_Should_return_error_for_unsupported_none_algo(t *testing.T) {
-	rem_none := j.RemoveConstraints(j.None_Algo)
 	jwt := j.New(rem_none)
 	jwt_parsed, err := j.Decode(jwt.GetToken())
 	if !ExpectError(t, j.ErrInvalidAlgorithm, err) {
@@ -103,7 +103,6 @@ func Test_Should_return_error_for_unsupported_none_algo(t *testing.T) {
 }
 
 func Test_Should_parse_for_allowed_none_algo(t *testing.T) {
-	rem_none := j.RemoveConstraints(j.None_Algo)
 	jwt := j.New(rem_none)
 	_, err := j.Decode(jwt.GetToken(), rem_none)
 	if !ExpectNilError(t, "Decode token with none algo", err) {
@@ -112,8 +111,8 @@ func Test_Should_parse_for_allowed_none_algo(t *testing.T) {
 }
 
 func Test_Should_build_and_parse_valid_token(t *testing.T) {
-	jwt := j.New(
-		j.RemoveConstraints(j.None_Algo),
+	jwt := j.New( //rem_none,
+		j.UseConstraints(j.None_Algo),
 		j.Id(fmt.Sprintf("%X", uint64(3000))),
 
 		/*
@@ -139,23 +138,18 @@ func Test_Should_build_and_parse_valid_token(t *testing.T) {
 			j.PrivateParams(map[string]interface{}{
 				"xze": "1.0.0",
 			}),
-			j.PublicClaims(map[string]interface{}{
-				"facebook.com/userid": "1000",
-			}),
-			j.PrivateClaims(map[string]interface{}{
-				"session": "2000",
-			}),
 		*/
 	)
 	if !ExpectNilErrors(t, "Build valid token", jwt.GetErrors()) {
 		return
 	}
-	log.Printf("\n* TokenDef:\n[ %#v ]\nToken: [ %s ]\n\n", jwt, jwt.GetToken())
-	jwt_parsed, err := j.Decode(jwt.GetToken())
+	//log.Printf("\n* TokenDef:\n[ %#v ]\nToken: [ %s ]\n\n", jwt, jwt.GetToken())
+	jwt_parsed, err := j.Decode(jwt.GetToken(), rem_none)
 	if !ExpectNilError(t, "Parsing jwt token", err) {
 		return
 	}
-	if !reflect.DeepEqual(jwt, jwt_parsed) {
+	//if !reflect.DeepEqual(jwt, jwt_parsed) {
+	if !jwt.Equals(jwt_parsed) {
 		t.Errorf("Expected [\n%#v\n] but was [\n%#v\n]", jwt, jwt_parsed)
 		return
 	}
@@ -169,8 +163,7 @@ func Test_Should_append_private_claims(t *testing.T) {
 		"b": "b-1",
 	}
 
-	jwt := j.New(
-		j.RemoveConstraints(j.None_Algo),
+	jwt := j.New(rem_none,
 		j.PrivateClaims(expected))
 	if !ExpectNilErrors(t, "Append private claiims", jwt.GetErrors()) {
 		return
@@ -189,8 +182,7 @@ func Test_Should_append_public_claims_to_both_private_and_public(t *testing.T) {
 		"b": "b-1",
 	}
 
-	jwt := j.New(
-		j.RemoveConstraints(j.None_Algo),
+	jwt := j.New(rem_none,
 		j.PublicClaims(expected))
 	if !ExpectNilErrors(t, "Append public claims", jwt.GetErrors()) {
 		return
@@ -208,7 +200,7 @@ func Test_Should_append_public_claims_to_both_private_and_public(t *testing.T) {
 	AssertClaims(t, expected, pub_c)
 }
 
-func Test_Should_return_error_when_overwriting_claims_on_set(t *testing.T) {
+func Test_Should_return_error_when_overwriting_private_claims_on_set(t *testing.T) {
 	initial := map[string]interface{}{
 		"a": "a-1",
 		"b": "b-1",
@@ -218,10 +210,27 @@ func Test_Should_return_error_when_overwriting_claims_on_set(t *testing.T) {
 		"c": "c-2",
 	}
 
-	jwt := j.New(
-		j.RemoveConstraints(j.None_Algo),
+	jwt := j.New(rem_none,
 		j.PrivateClaims(initial),
 		j.PrivateClaims(overwrite))
+	if !ExpectErrors(t, jwt.GetErrors(), j.ErrClaimOverwritten) {
+		return
+	}
+}
+
+func Test_Should_return_error_when_overwriting_public_claims_on_set(t *testing.T) {
+	initial := map[string]interface{}{
+		"a": "a-1",
+		"b": "b-1",
+	}
+	overwrite := map[string]interface{}{
+		"b": "b-2",
+		"c": "c-2",
+	}
+
+	jwt := j.New(rem_none,
+		j.PublicClaims(initial),
+		j.PublicClaims(overwrite))
 	if !ExpectErrors(t, jwt.GetErrors(), j.ErrClaimOverwritten) {
 		return
 	}
@@ -275,8 +284,8 @@ func Test_Should_swap_found_public_claims_on_set_with_relaxed_options(t *testing
 		"a": "a-1",
 	}
 
-	jwt := j.New(
-		j.RemoveConstraints(j.None_Algo, j.Swap_Public),
+	jwt := j.New(rem_none,
+		j.RemoveConstraints(j.Swap_Public),
 		j.PublicClaims(initial),
 		j.PrivateClaims(overwrite))
 	if !ExpectNilErrors(t, "swap exsiting public claims relaxed", jwt.GetErrors()) {
@@ -314,7 +323,7 @@ func Test_Should_swap_found_private_claims_on_set_with_relaxed_options(t *testin
 		"c": "c-2",
 	}
 
-	jwt := j.New(
+	jwt := j.New(rem_none,
 		j.RemoveConstraints(j.Swap_Private),
 		j.PrivateClaims(initial),
 		j.PublicClaims(overwrite))
@@ -350,8 +359,7 @@ func Test_Should_merge_public_claims_into_private_set_for_SetClaims(t *testing.T
 		"d": "d-1",
 	}
 
-	jwt := j.New(
-		j.RemoveConstraints(j.None_Algo),
+	jwt := j.New(rem_none,
 		j.PrivateClaims(initial_priv),
 		j.PublicClaims(expected_pub))
 	if !ExpectNilErrors(t, "Merge public claims", jwt.GetErrors()) {
@@ -375,8 +383,7 @@ func Test_Should_return_error_when_private_claims_are_set_public(t *testing.T) {
 		"a": "a-1",
 	}
 
-	jwt := j.New(
-		j.RemoveConstraints(j.None_Algo),
+	jwt := j.New(rem_none,
 		j.PrivateClaims(claims),
 		j.PublicClaims(claims))
 	if !ExpectErrors(t, jwt.GetErrors(), j.ErrClaimOverwritten) {
@@ -389,8 +396,7 @@ func Test_Should_return_error_when_overwriting_public_claims_with_private(t *tes
 		"a": "a-1",
 	}
 
-	jwt := j.New(
-		j.RemoveConstraints(j.None_Algo),
+	jwt := j.New(rem_none,
 		j.PublicClaims(claims),
 		j.PrivateClaims(claims))
 	if !ExpectErrors(t, jwt.GetErrors(), j.ErrClaimOverwritten) {

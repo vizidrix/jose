@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"reflect"
 )
 
 func init() {
@@ -61,6 +62,12 @@ func (t *TokenDef) Clone() *TokenDef {
 		token:    token,
 		errors:   nil,
 	}
+}
+
+func (t *TokenDef) Equals(o *TokenDef) bool {
+	h_ok := reflect.DeepEqual(t.header, o.header)
+	p_ok := reflect.DeepEqual(t.payload, o.payload)
+	return h_ok && p_ok
 }
 
 func (t *TokenDef) AppendError(err error) {
