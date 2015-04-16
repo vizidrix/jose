@@ -1,0 +1,316 @@
+package jose
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+)
+
+func init() {
+	log.SetFlags(log.Llongfile)
+}
+
+type TokenDef struct {
+	settings *Settings
+	header   *HeaderDef
+	payload  *PayloadDef
+	token    []byte
+	errors   map[error]struct{}
+}
+
+var EmptyStruct = struct{}{}
+
+func NewTokenDef() *TokenDef {
+	return &TokenDef{
+		settings: &Settings{
+			flags: Strict,
+		},
+		header: &HeaderDef{
+			Type:          "JWT",
+			ContentType:   "",
+			Algorithm:     "none",
+			PublicParams:  make(map[string]interface{}),
+			PrivateParams: make(map[string]interface{}),
+			PublicClaims:  make(map[string]interface{}),
+		},
+		payload: &PayloadDef{
+			PrivateClaims: make(map[string]interface{}),
+		},
+		token: nil,
+		errors: map[error]struct{}{
+			ErrUnitializedToken: struct{}{},
+		},
+	}
+}
+
+func (t *TokenDef) Clone() *TokenDef {
+	settings := *t.settings
+	header := *t.header
+	payload := *t.payload
+	var token []byte
+	if t.token != nil {
+		copy(token, t.token)
+	}
+	return &TokenDef{
+		settings: &settings,
+		header:   &header,
+		payload:  &payload,
+		token:    token,
+		errors:   nil,
+	}
+}
+
+func (t *TokenDef) AppendError(err error) {
+	if t.errors == nil {
+		t.errors = make(map[error]struct{})
+	}
+	t.errors[err] = EmptyStruct
+}
+
+func WrapErr(message string, err error) error {
+	return errors.New(fmt.Sprintf("%s: [ %s ]", message, err))
+}
+
+func (t *TokenDef) Mod(mods ...TokenModifier) (r *TokenDef) {
+	r = t.Clone()
+	for _, mod := range mods {
+		if err := mod(r); err != nil {
+			r.AppendError(err)
+		}
+	}
+	// ToDo: validations and append to t.errors
+
+	return r
+}
+
+func (t *TokenDef) Validate() (v_errs []error) {
+	// ToDo: validations and append to v_errs on error
+
+	return nil
+}
+
+const period = 46
+
+//var period = byte('.')
+
+func (t *TokenDef) Encode() (r []byte, err error) {
+	if t.errors != nil {
+		return nil, ErrInvalidToken
+	}
+	h := &bytes.Buffer{}
+	if err = t.EncodeHeader(h); err != nil {
+		return
+	}
+	p := &bytes.Buffer{}
+	if err = t.EncodePayload(p); err != nil {
+		return
+	}
+	s := &bytes.Buffer{}
+	s.Write(bytes.TrimRight(h.Bytes(), "="))
+	s.WriteByte(period)
+	// Encrypt p prior to signing
+	s.Write(bytes.TrimRight(p.Bytes(), "="))
+	log.Printf("SigData: [ %s ]", s.Bytes())
+
+	s.WriteByte(period)
+	// Append signature
+	log.Printf("Token: [ %s ]", s.Bytes())
+	return s.Bytes(), nil
+}
+
+func (t *TokenDef) GetToken() []byte {
+	return t.token
+}
+
+func (t *TokenDef) GetErrors() []error {
+	if t.errors == nil {
+		return nil
+	}
+	l := len(t.errors)
+	i := 0
+	errs := make([]error, l, l)
+	for k, _ := range t.errors {
+		errs[i] = k
+		i++
+	}
+	return errs
+}
+
+func (t *TokenDef) GetHeader() (r HeaderDef, err error) {
+	if t == nil || t.header == nil {
+		err = ErrRequiredElementWasNil
+		return
+	}
+	var i interface{}
+	if i, err = CloneInterface(t.header); err == nil {
+		r = i.(HeaderDef)
+	}
+	return
+}
+
+func (t *TokenDef) EncodeHeader(w io.Writer) (err error) {
+	var j []byte
+	if j, err = json.Marshal(t.header); err == nil {
+		enc := base64.NewEncoder(base64.URLEncoding, w)
+		enc.Write(j)
+		enc.Close()
+	}
+	return
+}
+
+func (t *TokenDef) GetType() string {
+	if t == nil || t.header == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.header.Type
+}
+
+func (t *TokenDef) GetAlgorithm() string {
+	if t == nil || t.header == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.header.Algorithm
+}
+
+func (t *TokenDef) GetPublicParams() (r map[string]interface{}, err error) {
+	if t == nil || t.header == nil {
+		err = ErrRequiredElementWasNil
+		return
+	}
+	r, err = CloneMap(t.header.PublicParams)
+	return
+}
+
+func (t *TokenDef) GetPrivateParams() (r map[string]interface{}, err error) {
+	if t == nil || t.header == nil {
+		return nil, ErrRequiredElementWasNil
+	}
+	r, err = CloneMap(t.header.PrivateParams)
+	return
+}
+
+func (t *TokenDef) GetPublicClaims() (r map[string]interface{}, err error) {
+	if t == nil || t.header == nil {
+		return nil, ErrRequiredElementWasNil
+	}
+	r, err = CloneMap(t.header.PublicClaims)
+	return
+}
+
+func (t *TokenDef) GetPayload() (r PayloadDef, err error) {
+	if t == nil || t.payload == nil {
+		err = ErrRequiredElementWasNil
+		return
+	}
+	var i interface{}
+	if i, err = CloneInterface(t.payload); err == nil {
+		r = i.(PayloadDef)
+	}
+	return
+}
+
+func (t *TokenDef) EncodePayload(w io.Writer) (err error) {
+	var j []byte
+	if j, err = json.Marshal(t.payload); err == nil {
+		enc := base64.NewEncoder(base64.URLEncoding, w)
+		enc.Write(j)
+		enc.Close()
+	}
+	return
+}
+
+func (t *TokenDef) GetId() string {
+	if t == nil || t.payload == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.payload.Id
+}
+
+func (t *TokenDef) GetExpirationTime() int64 {
+	if t == nil || t.payload == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.payload.ExpirationTime
+}
+
+func (t *TokenDef) GetNotBefore() int64 {
+	if t == nil || t.payload == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.payload.NotBefore
+}
+
+func (t *TokenDef) GetIssuedAtTime() int64 {
+	if t == nil || t.payload == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.payload.IssuedAtTime
+}
+
+func (t *TokenDef) GetIssuer() string {
+	if t == nil || t.payload == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.payload.Issuer
+}
+
+func (t *TokenDef) GetAudience() string {
+	if t == nil || t.payload == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.payload.Audience
+}
+
+func (t *TokenDef) GetTenant() string {
+	if t == nil || t.payload == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.payload.Tenant
+}
+
+func (t *TokenDef) GetSubject() string {
+	if t == nil || t.payload == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.payload.Subject
+}
+
+func (t *TokenDef) GetPrincipal() string {
+	if t == nil || t.payload == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.payload.Principal
+}
+
+func (t *TokenDef) GetNonce() string {
+	if t == nil || t.payload == nil {
+		panic(ErrRequiredElementWasNil)
+	}
+	return t.payload.Nonce
+}
+
+func (t *TokenDef) GetData() (r interface{}, err error) {
+	if t == nil || t.payload == nil {
+		err = ErrRequiredElementWasNil
+		return
+	}
+	r, err = CloneInterface(t.payload.Data)
+	return
+}
+
+func (t *TokenDef) GetPrivateClaims() (r map[string]interface{}, err error) {
+	if t == nil || t.payload == nil || t.header == nil {
+		return nil, ErrRequiredElementWasNil
+	}
+	if r, err = CloneMap(t.payload.PrivateClaims); err != nil {
+		return nil, err
+	}
+	for k, v := range t.header.PublicClaims {
+		r[k] = v
+	}
+	return r, nil
+}
