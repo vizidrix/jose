@@ -3,8 +3,6 @@ package jose
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"log"
 	"reflect"
@@ -23,6 +21,11 @@ type TokenDef struct {
 }
 
 var EmptyStruct = struct{}{}
+
+func New(mods ...TokenModifier) *TokenDef {
+	mods = append([]TokenModifier{Nonce(12)}, mods...)
+	return NewEmptyToken().Mod(mods...)
+}
 
 func NewEmptyToken() *TokenDef {
 	return &TokenDef{
@@ -77,10 +80,6 @@ func (t *TokenDef) AppendError(err error) {
 	t.errors[err] = EmptyStruct
 }
 
-func WrapErr(message string, err error) error {
-	return errors.New(fmt.Sprintf("%s: [ %s ]", message, err))
-}
-
 func (t *TokenDef) Mod(mods ...TokenModifier) (r *TokenDef) {
 	var err error
 	r = t.Clone()
@@ -100,6 +99,14 @@ func (t *TokenDef) Mod(mods ...TokenModifier) (r *TokenDef) {
 	}
 	//log.Printf("Mod.Token 2/2: [ %s ]", r.token)
 	return r
+}
+
+func (t *TokenDef) AppendKey(name, id string, e Encoder) {
+	log.Printf("RegisterKey[ %s ] = [ %s ]", id, name)
+	// Generate JWK
+	// If no key set and keys is empty then just set value
+	// If key is set and keys is empty then switch to keys and append
+	// If keys is not empty then append to keys
 }
 
 func (t *TokenDef) Validate() (v_errs []error) {
@@ -136,18 +143,6 @@ func (t *TokenDef) GetErrors() []error {
 	return errs
 }
 
-func (t *TokenDef) GetHeader() (r HeaderDef, err error) {
-	if t == nil || t.header == nil {
-		err = ErrRequiredElementWasNil
-		return
-	}
-	var i interface{}
-	if i, err = CloneInterface(t.header); err == nil {
-		r = i.(HeaderDef)
-	}
-	return
-}
-
 func (t *TokenDef) EncodeHeader(w io.Writer) (err error) {
 	if t == nil || t.header == nil {
 		err = ErrRequiredElementWasNil
@@ -158,6 +153,18 @@ func (t *TokenDef) EncodeHeader(w io.Writer) (err error) {
 		enc := base64.NewEncoder(base64.URLEncoding, w)
 		enc.Write(j)
 		enc.Close()
+	}
+	return
+}
+
+func (t *TokenDef) GetHeader() (r HeaderDef, err error) {
+	if t == nil || t.header == nil {
+		err = ErrRequiredElementWasNil
+		return
+	}
+	var i interface{}
+	if i, err = CloneInterface(t.header); err == nil {
+		r = i.(HeaderDef)
 	}
 	return
 }
@@ -201,15 +208,11 @@ func (t *TokenDef) GetPublicClaims() (r map[string]interface{}, err error) {
 	return
 }
 
-func (t *TokenDef) GetPayload() (r PayloadDef, err error) {
-	if t == nil || t.payload == nil {
-		err = ErrRequiredElementWasNil
-		return
+func (t *TokenDef) GetWebKeys() (k []WebKeyReader, err error) {
+	if t == nil || t.header == nil {
+		return nil, ErrRequiredElementWasNil
 	}
-	var i interface{}
-	if i, err = CloneInterface(t.payload); err == nil {
-		r = i.(PayloadDef)
-	}
+	panic("TODO") // Return single element or slice depending on setup / len of Keys
 	return
 }
 
@@ -223,6 +226,18 @@ func (t *TokenDef) EncodePayload(w io.Writer) (err error) {
 		enc := base64.NewEncoder(base64.URLEncoding, w)
 		enc.Write(j)
 		enc.Close()
+	}
+	return
+}
+
+func (t *TokenDef) GetPayload() (r PayloadDef, err error) {
+	if t == nil || t.payload == nil {
+		err = ErrRequiredElementWasNil
+		return
+	}
+	var i interface{}
+	if i, err = CloneInterface(t.payload); err == nil {
+		r = i.(PayloadDef)
 	}
 	return
 }

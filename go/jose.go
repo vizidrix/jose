@@ -3,19 +3,23 @@ package jose
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
-	"time"
+	//"time"
 )
 
 var (
+	ErrNotImplemented        = errors.New("not yet implemented")
 	ErrClaimOverwritten      = errors.New("cannot overwrite a claim that was previously set")
 	ErrInvalidFormat         = errors.New("unable to parse data structure")
 	ErrEmptyToken            = errors.New("cannot validate an empty token")
 	ErrInvalidAlgorithm      = errors.New("unable to use provided algorithm")
+	ErrInvalidKeyOps         = errors.New("unable to use provide key operations")
 	ErrEncodeInvalidToken    = errors.New("cannot encode invalid token")
 	ErrDecodeInvalidToken    = errors.New("cannot decode invalid token")
 	ErrUnitializedToken      = errors.New("uninitialized token cannot be used")
@@ -44,32 +48,97 @@ const ( // https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41#sec
 	JOSE_JWK_JSON = "JWK+JSON"
 )
 
+// See Key Definition Guidelines in readme for important considerations
+
+// Use and Ops serve similar purposes, valid configs are enforced unless disabled
+// Available properties for the "use" property of a JWK
+// Available properties for the "key_ops" property of a JWK
+type JWKKeyOps int64
+
+const (
+	Ops_NoCheck    JWKKeyOps = 1 << iota // Disable validation on key ops config
+	Ops_Use_Sig                          // Key is the Signature of the correlated data
+	Ops_Use_Enc                          // Key was used to encrypt the correlated data
+	Ops_Sign                             // Compute digital signature or MAC
+	Ops_Verify                           // Verify digital signature or MAC
+	Ops_Encrypt                          // Encrypt content
+	Ops_Decrypt                          // Decrypt content and validate the decryption, if applicable
+	Ops_WrapKey                          // Encrypts a key
+	Ops_UnwrapKey                        // Decrypt key and validate decryption, if applicable
+	Ops_DeriveKey                        // Derive key
+	Ops_DeriveBits                       // Derive bits not to be used as a key
+	// Ops combinations
+	OpsCombo_SignVerify       = Ops_Sign | Ops_Verify
+	OpsCombo_EncryptDecrypt   = Ops_Encrypt | Ops_Decrypt
+	OpsCombo_WrapKeyUnwrapKey = Ops_WrapKey | Ops_UnwrapKey
+	// Ops / Use combinations...
+	//Ops_Use_Sign
+	// Ops Categories
+	Ops_Cat_Sign    = Ops_Use_Sig | Ops_Sign | Ops_Verify
+	Ops_Cat_Encrypt = Ops_Use_Enc | Ops_Encrypt | Ops_Decrypt | Ops_WrapKey | Ops_UnwrapKey
+)
+
+var OpsMap = map[JWKKeyOps]string{
+	Ops_Sign:       "sign",
+	Ops_Verify:     "verify",
+	Ops_Encrypt:    "encrypt",
+	Ops_Decrypt:    "decrypt",
+	Ops_WrapKey:    "wrapKey",
+	Ops_UnwrapKey:  "unwrapKey",
+	Ops_DeriveKey:  "deriveKey",
+	Ops_DeriveBits: "deriveBits",
+}
+
+func CheckOps(v JWKKeyOps, ops ...JWKKeyOps) bool {
+	for _, o := range ops {
+		if v&o != o { // If any fail to match then reject the check
+			return false
+		}
+	}
+	return true
+}
+
+// Reserved keys should not be allowed in
+const Reserved = `kty|use|key_ops|alg|kid|x5u|x5c|x5t|x5t#256|keys|typ|cty|pub|pri|claims|jwk|jku|kid|jid|exp|nbf|iat|iss|aud|ten|sub|prn|non|dat`
+
 // WebKeyDef is used to describe the crypto method used to protect the JWS element
 // per spec: https://tools.ietf.org/html/draft-ietf-jose-json-web-key-41
 type WebKeyDef struct {
-	KeyType       string `json:"kty"`
-	PublicKeyUse  string `json:"use"`
-	KeyOperations string `json:"key_ops"`
-	Algorithm     string `json:"alg"`
+	KeyType       string   `json:"kty,omitempty"`     // Identifies the cryptographic algorithm family used with the key, such as "RSA" or "EC"
+	PublicKeyUse  string   `json:"use,omitempty"`     // Indicates whether a public key is used for encrypting data or verifying the signature on data
+	KeyOperations []string `json:"key_ops,omitempty"` // Defines which operations the key was intended for use in - as an arrry per: https://tools.ietf.org/html/draft-ietf-jose-json-web-key-31#section-8.3
+	Algorithm     string   `json:"alg,omitempty"`     // Identifies the algorithm intended for use with the key
+	KeyId         string   `json:"kid,omitempty"`     // Identifies a key within a set, for ex during rollover scenarios
+	X509Url       string   `json:"x5u,omitempty"`     // Refers to a resource for an X.509 public key cert or cert chain
+	X509CertChain []string `json:"x5c,omitempty"`     // Contains a chain of one or more PKIX certs as a JSON array of cert value strings in verify order
+	X509_SHA1     string   `json:"x5t,omitempty"`     // Base64Url encoded SHA-1 thumprint of the DER encoding of an X.509 certificate
+	X509_SHA256   string   `json:"x5t#256,omitempty"` // Base64Url encoded SHA-256 thumbprint of the DER encoding of an X.509 certificate
+}
+
+type WebKeySet struct {
+	WebKeyDef
+	Keys []WebKeyDef `json:"keys,omitempty"` // Required parameter containing an array of uinque (KID+KTY) JWK keys
 }
 
 // Header rovides members to describe the meta-data and protection for the payload and carry more visible processing data
 // per spec: https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41#section-4
 type HeaderDef struct { // https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41#section-4.1
-	Type          string                 `json:"typ,omitempty"`     // The "typ" (type) Header Parameter is used by JWS applications to declare the MIME Media Type [IANA.MediaTypes] of this complete JWS
-	ContentType   string                 `json:"cty,omitempty"`     // The "cty" (content type) Header Parameter is used by JWS applications to declare the MIME Media Type [IANA.MediaTypes] of the secured content (the payload)
-	Algorithm     string                 `json:"alg,omitempty"`     // The Signing / Encryption algorithm used on this token
-	PublicParams  map[string]interface{} `json:"public,omitempty"`  // Public header params should respect existing published params or be reasonably in control of the namespace
-	PrivateParams map[string]interface{} `json:"private,omitempty"` // Private header params are unrestricted but should be understood by both producers and consumers
-	PublicClaims  map[string]interface{} `json:"claims,omitempty"`  // Map of keyed claims to include if provided, must be duplicated in and validated against matching claims in the payload
+	Type          string                 `json:"typ,omitempty"`    // MIME Media Type [IANA.MediaTypes] of this complete JWS
+	ContentType   string                 `json:"cty,omitempty"`    // MIME Media Type [IANA.MediaTypes] of the secured content (the payload)
+	Algorithm     string                 `json:"alg,omitempty"`    // The Signing / Encryption algorithm used on this token
+	PublicParams  map[string]interface{} `json:"pub,omitempty"`    // Public header params should respect existing published params or be reasonably in control of the namespace
+	PrivateParams map[string]interface{} `json:"pri,omitempty"`    // Private header params are unrestricted but should be understood by both producers and consumers
+	PublicClaims  map[string]interface{} `json:"claims,omitempty"` // Map of keyed claims to include if provided, must be duplicated in and validated against matching claims in the payload
+	JSONWebKey    *WebKeySet             `json:"jwk,omitempty"`    // JWK encoded JSON web key rleated to this token
+	JSONWebKeyUri string                 `json:"jku,omitempty"`    // Uri location of JWK encoded public key related to this token, must be TLS
+	JSONWebKeyId  string                 `json:"kid,omitempty"`    // Value used to identify the key used to validating entity (when paired with Uri can identify item from set)
+
+	// TODO: Implement checks for critical params
 	//Critical      []string               `json:"crit,omitempty"`    // Indicates extensions to the spec that must be understood and respected if presented: https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41#section-4.1.11
-	//JSONWebKey    string                 `json:"jwk,omitempty"`     // JWK encoded JSON web key rleated to this token
-	//JSONWebKeyUri string                 `json:"jku,omitempty"`     // Uri location of JWK encoded public key related to this token, must be TLS
-	//JSONWebKeyId  string                 `json:"kid,omitempty"`     // Value used to identify the key used to validating entity (when paired with Uri can identify item from set)
 
 	// TODO: Implement certificate support features
 	//X509Header string `json:"x5u,omitmepty"` // Uri location of the X.509 public key
-	//X509CertChain string `json:"x5c"` // Public key or cert chain of the cert used on the token: https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41#section-4.1.6
+	//X509CertChain []string `json:"x5c"` // Public key or cert chain of the cert used on the token: https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-41#section-4.1.6
 	//X509SHA1 string `json:"x5t,omitempty"` // Base64 encoded DER encoding of an X.509 Certificate using SHA-1
 	//X509SHA256 string `json:"x5t#S256"` // Base64 encoded DER encoding of an X.509 Certificate using SHA-256
 }
@@ -86,14 +155,23 @@ type PayloadDef struct {
 	Tenant         string                 `json:"ten,omitempty"`    // The UID for the tenant of the issuing app
 	Subject        string                 `json:"sub,omitempty"`    // The UID for the subject of the token which identifies the current user, if authenticated
 	Principal      string                 `json:"prn,omitempty"`    // Legacy name of the property now called Subject
-	Nonce          string                 `json:"nonce,omitempty"`  // A randomized nonce can be provided to ensure that hashes are not spoofable by replays for more static payloads
-	Data           interface{}            `json:"data,omitempty"`   // Custom payload data to include if provided
+	Nonce          string                 `json:"non,omitempty"`    // A randomized nonce can be provided to ensure that hashes are not spoofable by replays for more static payloads
+	Data           interface{}            `json:"dat,omitempty"`    // Custom payload data to include if provided
 	PrivateClaims  map[string]interface{} `json:"claims,omitempty"` // Map of keyed claims to include if provided
 }
 
 // WebKeyReader provides access to read/only properties and methods of a web key definition
 // Any reference data should be obfuscated to ensure against unintentional or invalid modification
 type WebKeyReader interface {
+	GetKeyType() string
+	GetPubilcKeyUse() string
+	GetKeyOperations() string
+	GetAlgorithm() string
+	GetKeyId() string
+	GetX509Url() string
+	GetX509CertChain() []string
+	GetX509_SHA1() string
+	GetX509_SHA256() string
 }
 
 // HeaderReader provides access to read/only properties and methods of a token's header
@@ -106,6 +184,7 @@ type HeaderReader interface {
 	GetPublicParams() (map[string]interface{}, error)
 	GetPrivateParams() (map[string]interface{}, error)
 	GetPublicClaims() (map[string]interface{}, error)
+	GetWebKeys() []WebKeyReader
 }
 
 // PayloadReader provides access to read/only properties and methods of a token's payload
@@ -135,11 +214,28 @@ type TokenReader interface {
 	Validate() []error
 }
 
-// TokenModifier is the signature of the function lifted to apply changes to the token monad
+// TokenModifier is the signature of the function which can be used to modify a TokenDef
 type TokenModifier func(*TokenDef) error
+
+// KeyModifier is the signature of a function which can be used to modifiy a WebKeyDef
+type KeyModifier func(*WebKeyDef) error
 
 // ConstraintFlags alter the behavior of the token definition logic to provide configurable protection levels
 type ConstraintFlags int64
+
+const (
+	None_Algo          ConstraintFlags                        = 1 << iota // Blocks the validator from passing a "none" algo definition
+	Alg_Only                                                              // Block tokens that don't provide JWK entries for Keys (disable "alg" only by default, see security vulnerability in readme)
+	Overwrite_Private                                                     // Blocks private claims from being overwritten by other subsequent updates to the same key
+	Overwrite_Public                                                      // Blocks public claims from being overwritten by other subsequent updates to the same key
+	Swap_Private                                                          // Blocks silent upgrading of private claims to public claims, risks exposing or discarding data intended to be private
+	Swap_Public                                                           // Blocks silent downgrading of public claims to private claims, risks hiding data intended to be public
+	Overwrites         = Overwrite_Private | Overwrite_Public             // Blocks both overwrite cases
+	Swaps              = Swap_Private | Swap_Public                       // Blocks both swap cases
+	OverwritesAndSwaps = Overwrites | Swaps                               // Blocks all claim related cases
+	Strict             = None_Algo | OverwritesAndSwaps                   // Blocks all defined constraints, intended to provide the safest constraint option
+	None               = 0                                                // Disables all constraints
+)
 
 type Settings struct {
 	flags ConstraintFlags
@@ -169,21 +265,6 @@ func (s *Settings) CheckConstraints(cf ...ConstraintFlags) bool {
 	}
 	return true
 }
-
-const (
-	None_Algo          ConstraintFlags                        = 1 << iota // Blocks the validator from passing a "none" algo definition
-	Overwrite_Private                                                     // Blocks private claims from being overwritten by other subsequent updates to the same key
-	Overwrite_Public                                                      // Blocks public claims from being overwritten by other subsequent updates to the same key
-	Swap_Private                                                          // Blocks silent upgrading of private claims to public claims, risks exposing or discarding data intended to be private
-	Swap_Public                                                           // Blocks silent downgrading of public claims to private claims, risks hiding data intended to be public
-	Overwrites         = Overwrite_Private | Overwrite_Public             // Blocks both overwrite cases
-	Swaps              = Swap_Private | Swap_Public                       // Blocks both swap cases
-	OverwritesAndSwaps = Overwrites | Swaps                               // Blocks all claim related cases
-	Strict             = None_Algo | OverwritesAndSwaps                   // Blocks all defined constraints, intended to provide the safest constraint option
-	None               = 0                                                // Disables all constraints
-)
-
-const TenMinutes = 10 * time.Minute
 
 // Decode parses, validates and extracts the state of the token, returning an error if any part fails
 func Decode(token []byte, mods ...TokenModifier) (r *TokenDef, err error) {
@@ -226,18 +307,6 @@ func Encode(t *TokenDef) ([]byte, error) {
 	return s.Bytes(), nil
 }
 
-func New(mods ...TokenModifier) *TokenDef {
-	return NewEmptyToken().Mod(mods...)
-}
-
-/*
-func HMAC256(secret string) TokenModifier {
-	return func(t *TokenDef) error {
-		return nil
-	}
-}
-*/
-
 func json_decode_trimmed_base64(l int, d []byte, t interface{}) (err error) {
 	m := l % 4
 	b := bytes.NewBuffer(make([]byte, 0, l+m))
@@ -251,114 +320,8 @@ func json_decode_trimmed_base64(l int, d []byte, t interface{}) (err error) {
 	return nil
 }
 
-func Load(token []byte) TokenModifier {
-	return func(t *TokenDef) error {
-		var err error
-		segs := bytes.Split(token, period_slice)
-		if len(segs) != 3 {
-			return ErrDecodeInvalidToken
-		}
-		s_len := len(segs[2])
-		if s_len == 0 { // None signature
-			if t.settings.CheckConstraints(None_Algo) { // Require explicit acceptance
-				return ErrInvalidAlgorithm
-			}
-		}
-		h_len := len(segs[0])
-		p_len := len(segs[1])
-		if err = json_decode_trimmed_base64(h_len, segs[0], t.header); err != nil {
-			return err
-		}
-		if err = json_decode_trimmed_base64(p_len, segs[1], t.payload); err != nil {
-			return err
-		}
-		return nil
-	}
-}
-
-func UseConstraints(cs ...ConstraintFlags) TokenModifier {
-	return func(t *TokenDef) error {
-		if t == nil || t.settings == nil {
-			return ErrRequiredElementWasNil
-		}
-		t.settings.UseConstraints(cs...)
-		return nil
-	}
-}
-func RemoveConstraints(cs ...ConstraintFlags) TokenModifier {
-	return func(t *TokenDef) error {
-		if t == nil || t.settings == nil {
-			return ErrRequiredElementWasNil
-		}
-		t.settings.RemoveConstraints(cs...)
-		return nil
-	}
-}
-
-func AddConstraints(cs ...ConstraintFlags) TokenModifier {
-	return func(t *TokenDef) error {
-		if t == nil || t.settings == nil {
-			return ErrRequiredElementWasNil
-		}
-		t.settings.AddConstraints(cs...)
-		return nil
-	}
-}
-
-func Id(id string) TokenModifier {
-	return func(t *TokenDef) error {
-		if t == nil || t.payload == nil {
-			return ErrRequiredElementWasNil
-		}
-		t.payload.Id = id
-		return nil
-	}
-}
-
-func PrivateClaims(private map[string]interface{}) TokenModifier {
-	return func(t *TokenDef) error {
-		if t == nil || t.settings == nil || t.header == nil || t.payload == nil {
-			return ErrRequiredElementWasNil
-		}
-		for k, v := range private {
-			if t.settings.CheckConstraints(Overwrite_Private) {
-				if _, ok := t.payload.PrivateClaims[k]; ok {
-					return ErrClaimOverwritten
-				}
-			}
-			if _, ok := t.header.PublicClaims[k]; ok {
-				if t.settings.CheckConstraints(Swap_Public) {
-					return ErrClaimOverwritten
-				} // Overwrie allowed so remove it from public set
-				delete(t.header.PublicClaims, k)
-			}
-			t.payload.PrivateClaims[k] = v
-		}
-		return nil
-	}
-}
-
-func PublicClaims(public map[string]interface{}) TokenModifier {
-	return func(t *TokenDef) error {
-		if t == nil || t.settings == nil || t.header == nil || t.payload == nil {
-			return ErrRequiredElementWasNil
-		}
-		for k, v := range public {
-			if t.settings.CheckConstraints(Overwrite_Public) {
-				if _, ok := t.header.PublicClaims[k]; ok {
-					return ErrClaimOverwritten
-				}
-			}
-			if _, ok := t.payload.PrivateClaims[k]; ok {
-				if t.settings.CheckConstraints(Swap_Private) {
-					return ErrClaimOverwritten
-				} // Overwrie allowed so remove it from private set
-				delete(t.payload.PrivateClaims, k)
-			}
-			t.header.PublicClaims[k] = v
-		}
-		return nil
-	}
+func WrapErr(message string, err error) error {
+	return errors.New(fmt.Sprintf("%s: [ %s ]", message, err))
 }
 
 func CloneMap(in map[string]interface{}) (map[string]interface{}, error) {
@@ -383,4 +346,20 @@ func CloneInterface(in interface{}) (interface{}, error) {
 		}
 	}
 	return v, nil
+}
+
+func RandomBytes(c int) ([]byte, error) {
+	b := make([]byte, c, c)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func RandomString(c int) (string, error) {
+	if b, err := RandomBytes(c); err != nil {
+		return "", err
+	} else {
+		return base64.URLEncoding.EncodeToString(b), nil
+	}
 }
