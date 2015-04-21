@@ -3,6 +3,7 @@ package jose
 import (
 	"encoding/base64"
 	"encoding/json"
+	"github.com/vizidrix/crypto"
 	"io"
 	"log"
 	"reflect"
@@ -101,7 +102,7 @@ func (t *TokenDef) Mod(mods ...TokenModifier) (r *TokenDef) {
 	return r
 }
 
-func (t *TokenDef) AppendKey(name, id string, e Encoder) {
+func (t *TokenDef) AppendKey(name, id string, e crypto.Encoder) {
 	log.Printf("RegisterKey[ %s ] = [ %s ]", id, name)
 	// Generate JWK
 	// If no key set and keys is empty then just set value

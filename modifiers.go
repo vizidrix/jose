@@ -2,6 +2,7 @@ package jose
 
 import (
 	"bytes"
+	"github.com/vizidrix/crypto"
 	//"log"
 )
 
@@ -123,7 +124,7 @@ func Nonce(c int) TokenModifier {
 		if c < 0 {
 			c = 0
 		}
-		t.payload.Nonce, _ = RandomString(c)
+		t.payload.Nonce, _ = crypto.RandomString(c)
 		return nil
 	}
 }

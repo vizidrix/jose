@@ -3,14 +3,12 @@ package jose
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	//"time"
 )
 
 var (
@@ -346,20 +344,4 @@ func CloneInterface(in interface{}) (interface{}, error) {
 		}
 	}
 	return v, nil
-}
-
-func RandomBytes(c int) ([]byte, error) {
-	b := make([]byte, c, c)
-	if _, err := rand.Read(b); err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
-func RandomString(c int) (string, error) {
-	if b, err := RandomBytes(c); err != nil {
-		return "", err
-	} else {
-		return base64.URLEncoding.EncodeToString(b), nil
-	}
 }

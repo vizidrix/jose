@@ -133,9 +133,12 @@ Key Id should be unique within a set
 
 Key Types not understood by the server should be rejected outright
 
-TODO:
+#TODO:
 - WebKey structs for other providers
 	- EC: curve, x, y
 	- RSA: modulus, exponent
-
-
+Add additional features:
+- Option to set skew - variance allowed by clock time checks
+- Option to provide time - to keep the library pure
+- QueryStringHash string `json:"qsh"`
+	- Hash producded from the Method, Relative Path plus the Sorted Set of Query String Params, used to prevent URL tampering

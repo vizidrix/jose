@@ -2,7 +2,7 @@ package jose_test
 
 import (
 	"fmt"
-	j "github.com/vizidrix/jose/go"
+	j "github.com/vizidrix/crypto/jose"
 	"log"
 	"testing"
 	//"time"
@@ -220,9 +220,20 @@ func Test_Should_build_and_parse_valid_token(t *testing.T) {
 	}
 }
 
+func Test_Should_auto_assign_kid_by_index_if_unset(t *testing.T) {
+	//jwk := j.HS256(secret)
+
+	//if jwk.GetKeyId() != "" {
+	//	t.Errorf("Expected empty kid but found [ %s ]", jwk.GetKeyId())
+	//}
+}
+
+/*
 func Test_Should_build_and_parse_HS256_token(t *testing.T) {
-	jwk := j.HS256("one", secret)
-	jwt := j.New(jwk)
+	//jwk := j.HS256("one", secret)
+	jwk_hmac_enc := j.HS256(secret).Encryptor(j.Ops(j.Ops_Cat_Encrypt))
+	//log.Printf("\njwk: [ %#v ]", jwk)
+	jwt := j.New(jwk_hmac_enc.Kid("one"))
 	if !ExpectNilErrors(t, "Build valid token", jwt.GetErrors()) {
 		return
 	}
@@ -235,6 +246,7 @@ func Test_Should_build_and_parse_HS256_token(t *testing.T) {
 		return
 	}
 }
+*/
 
 /* TODO: Other properties to validate:
 j.IssuedAt(time.Now()+(10*time.Second)),
