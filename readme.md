@@ -23,16 +23,58 @@ The goal of this implementation is to:
 
 ## Examples
 
-> Make an empty JWS with None and decode it
+> Make an empty JWS with "None" and decode it
 
 > { notice that explicitly enabling the algo is required in both encoding and decoding}
 
 ````golang
-rem_none := j.RemoveConstraints(j.None_Algo)
-jwt := j.New(rem_none)
-_, err := j.Decode(jwt.GetToken(), rem_none)
+rem_none := jose.RemoveConstraints(j.None_Algo)
+jwt := jose.New(rem_none)
+_, err := jose.Decode(jwt.GetToken(), rem_none)
 ````
 
+> Make an HMAC 256 signed token
+
+````golang
+jwt := jose.New(
+	jose.HS256("key_id", []byte("secret")).Signer(),
+	jose.Id("10"),
+)
+token, err := jwt.GetToken()
+if err != nil {
+	// Error building token - validation error(s)
+	return
+}
+log.Printf("My HMAC+SHA256 Signed Token: [ %s ]", token)
+...
+
+jwt_parsed := jwt.Decode(token, jose.HS256("key_id", []byte("secret")).Signer())
+if errs := jwt_parsed.GetErrors(); len(errs) != 0 {
+	// Parse error(s) - Covers both structural and/or validation errors
+}
+...
+````
+
+> You can also define keys at server load to standardize and simplify calls
+
+````
+key := jose.HS512("key_id", []byte("secret")).Signer()
+...
+
+token, err := jose.New(key, jose.Id("10")).GetToken()
+if err != nil {
+	// Error building token: [ %s ]", token)
+	return
+}
+log.Printf("My HMAC+SHA512 Signed Token: [ %s ]", token)
+...
+
+jwt_parsed := jwt.Decode(token, key)
+if errs := jwt_parsed.GetErrors(); len(errs) != 0 {
+	// Parse error(s) - Covers both structural and/or validation errors
+}
+...
+````
 
 ## Some Light Reading
 
