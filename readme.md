@@ -30,7 +30,8 @@ The goal of this implementation is to:
 ````golang
 rem_none := jose.RemoveConstraints(j.None_Algo)
 jwt := jose.New(rem_none)
-_, err := jose.Decode(jwt.GetToken(), rem_none)
+token, _ := jwt.GetToken()
+_, err := jose.Decode(token, rem_none)
 ````
 
 > Make an HMAC 256 signed token
