@@ -50,6 +50,8 @@ _, err := j.Decode(jwt.GetToken(), rem_none)
 
 [Generating Secure Random in Golang](http://elithrar.github.io/article/generating-secure-random-numbers-crypto-rand/)
 
+[JWK Selector - Lookup Criteria](http://connect2id.com/products/nimbus-jose-jwt/examples/jwk-selectors)
+
 ## HTTP Basics for Auth
 
 > 401 "Unauthorized" == Unauthenticated i.e. Don't know who you are or don't recognize your token
