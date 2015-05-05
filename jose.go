@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	//"log"
 )
 
 var (
@@ -203,6 +202,7 @@ func (s *Settings) CheckConstraints(cf ...ConstraintFlags) bool {
 	return true
 }
 
+//http://rodaine.com/2015/04/async-split-io-reader-in-golang/
 func Encode(t *TokenDef) ([]byte, error) {
 	if t.errors != nil {
 		errs := make([]error, 0, len(t.errors))
@@ -232,13 +232,9 @@ func Encode(t *TokenDef) ([]byte, error) {
 	if s, err := t.Sign(d.Bytes()); err != nil {
 		return nil, err
 	} else {
-		//log.Printf("Signature [ %s ]", s)
 		d.WriteByte(period)
 		d.Write(s)
 	}
-	//log.Printf("\nEncode Token:\n[ %s + %s ] ==>\n\t%s\n",
-	//	h, p, d.Bytes())
-
 	return d.Bytes(), nil
 }
 
@@ -248,18 +244,13 @@ func Decode(token []byte, mods ...TokenModifier) (r *TokenDef, err error) {
 	if l, err = Parse(token); err != nil {
 		return
 	}
-	//mods = append(mods, load(token))
 	mods = append(mods, l)
-	//for i, mod := range mods {
-	//log.Printf("Token Mod[ %d ]: [ %#v ]", i, mod)
-	//}
 	t := NewEmptyToken().Mod(mods...)
 	errs := t.GetErrors()
 	if errs != nil {
 		if _, ok := t.errors[ErrInvalidAlgorithm]; ok {
 			return nil, ErrInvalidAlgorithm
 		}
-		//log.Printf("Decode [\n%s\n]== [ %#v ]\n", errs, t.err_mods)
 		return nil, ErrDecodeInvalidToken
 	}
 	return t, nil
@@ -285,35 +276,18 @@ func Parse(token []byte) (TokenModifier, error) {
 				p := token[:h_len+p_len+1] // Grab first two chunks and sign to validate signature
 
 				if s, err = DecodeRawSegment(segs[2]); err != nil {
-					//log.Printf("\nDecode signature error: [ %s ]", err)
 					return ErrDecodeInvalidSignature
 				}
-				//log.Printf("Compare: p [ %s ] to s [ %s ]", p, s)
 				if !t.Verify(p, s) {
-					//log.Printf("Invalid signature")
 					return ErrSignatureValidationFailed
-					//panic("invalid signature")
 				}
 			} // Verify / Decrypt using configured key(s)
-
-			/*
-				if s, err = t.Sign(p); err != nil { // Generate signature for comparison
-					return err
-				}
-				log.Printf("\n* Compare signatures:\n\nT:\t%s\n\nP:\t%s\n\nGen:\t%s\n\nFound:\t%s\n\n\n", token, p, s, segs[2])
-				if string(s) != string(segs[2]) {
-					panic("invalid signature") // TODO: return real error
-				}
-			*/
 			if err := DecodeRawJsonSegment(h_len, segs[0], &t.header); err != nil {
 				return ErrDecodeInvalidHeader
 			}
-			//log.Printf("Decoded header: [ %s ]", t.header)
 			if err := DecodeRawJsonSegment(p_len, segs[1], &t.payload); err != nil {
 				return ErrDecodeInvalidPayload
-				// any other processing
 			}
-			//log.Printf("Decoded payload: [ %s ]", t.payload)
 			return nil
 		},
 	}, nil
@@ -354,7 +328,6 @@ func DecodeRawSegment(d []byte) (r []byte, err error) {
 	b := bytes.NewBuffer(make([]byte, 0, l+m))
 	b.Write(d)
 	b.Write(base64_padding[m])
-	//log.Printf("Base64 Decode: [ %s + %d ] == [ %s ]", d, m, b.String())
 	r, err = base64.URLEncoding.DecodeString(b.String())
 	return
 }
