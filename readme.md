@@ -1,6 +1,9 @@
 
 ## JSON Object Signing and Encryption (JOSE)
 
+[ ![Codeship Status for vizidrix/jose](https://codeship.com/projects/3bb2a380-de23-0132-e133-2204af7cc628/status?branch=master)](https://codeship.com/projects/80367)
+[![GoDoc](https://godoc.org/github.com/vizidrix/jose?status.png)](https://godoc.org/github.com/vizidrix/jose)
+
 The goal of this implementation is to:
 - Provide a clean api for interacting with JOSE tokens
 - Follow the existing standard as closely as possible
