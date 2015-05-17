@@ -1,11 +1,12 @@
 package jose_test
 
 import (
+	. "github.com/stretchr/testify/assert"
 	j "github.com/vizidrix/jose"
 	"testing"
 )
 
-func Test_Should_encode_and_decode_HMAC256_signed_token(t *testing.T) {
+func Test__Encode_and_decode_HMAC256_signed_token(t *testing.T) {
 	secret := []byte("secret")
 	key := j.HS256("a", secret).Signer()
 	jwt := j.New(
@@ -13,17 +14,17 @@ func Test_Should_encode_and_decode_HMAC256_signed_token(t *testing.T) {
 		j.Id("10"),
 	)
 	token, err := jwt.GetToken()
-	if !ExpectNilError(t, "Should have built token", err) {
+	if !NoError(t, err, "should have built token") {
 		return
 	}
 	h := jwt.GetHeader()
-	Equals(t, "HS256", h.JSONWebKey.Algorithm, "Should have set signature algorithm")
-	Equals(t, "HS256", h.JSONWebKey.Algorithm, "Should have set web key signature algorithm")
+	Equal(t, "HS256", h.JSONWebKey.Algorithm, "Should have set signature algorithm")
+	Equal(t, "HS256", h.JSONWebKey.Algorithm, "Should have set web key signature algorithm")
 
 	if jwt_parsed, err := j.Decode(token, key); err != nil {
-		Ok(t, err)
+		NoError(t, err, "should not have failed decode")
 	} else {
-		Equals(t, "10", jwt_parsed.GetId(), "Should have decoded valid id")
+		Equal(t, "10", jwt_parsed.GetId(), "should have decoded valid id")
 	}
 }
 

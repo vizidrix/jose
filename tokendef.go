@@ -253,7 +253,7 @@ func (t *TokenDef) GetNonce() string {
 
 func (t *TokenDef) GetData(result interface{}) (err error) {
 	if result == nil {
-		return ErrRequiredElementWasNil
+		return ErrProvidedDataWasNil
 	}
 	CloneInterface(t.payload.Data, result)
 	return

@@ -2,6 +2,7 @@ package jose_test
 
 import (
 	"fmt"
+	. "github.com/stretchr/testify/assert"
 	j "github.com/vizidrix/jose"
 	"testing"
 )
@@ -10,176 +11,216 @@ var rem_none = j.RemoveConstraints(j.CONST_None_Algo)
 
 var secret = []byte("secret")
 
-func Test_Should_set_key_use_correctly(t *testing.T) {
+func Test__Set_key_use_correctly(t *testing.T) {
 	ops := &j.WebKeyDef{}
 	mod := j.Ops(j.Ops_Use_Sig)
-	if err := mod(ops); !ExpectNilError(t, "Set Key Ops Sig", err) {
-		return
-	}
-	if ops.PublicKeyUse != "sig" {
-		t.Errorf("Expected [ sig ] but was [ %s ]", ops.PublicKeyUse)
-	}
-	mod = j.Ops(j.Ops_Use_Enc)
-	if err := mod(ops); !ExpectNilError(t, "Set Key Ops Enc", err) {
-		return
-	}
-	if ops.PublicKeyUse != "enc" {
-		t.Errorf("Expected [ enc ] but was [ %s ]", ops.PublicKeyUse)
+	err := mod(ops)
+	if NoError(t, err, "Set key ops sig %s", ops) &&
+		Equal(t, "sig", ops.PublicKeyUse) {
+		mod = j.Ops(j.Ops_Use_Enc)
+		if NoError(t, mod(ops), "set key ops enc") &&
+			Equal(t, "enc", ops.PublicKeyUse) {
+			return
+		}
 	}
 }
 
-func Test_Should_correctly_set_valid_key_ops(t *testing.T) {
-	var ops *j.WebKeyDef
-	test := func(op j.JWKKeyOpFlag, keys []string) {
-		ops = &j.WebKeyDef{}
-		if err := j.Ops(op)(ops); !ExpectNilError(t, "Set Key Ops", err) {
-			t.Errorf("Expected no error setting ops key [ %X ]", uint64(op))
+var key_ops_tests = []struct {
+	flag j.JWKKeyOpFlag
+	keys []string
+}{ // TODO: Add these back as implemented
+	{j.Ops_Sign, []string{"sign"}},
+	{j.Ops_Verify, []string{"verify"}},
+	//{j.Ops_Encrypt, []string{"encrypt"}},
+	//{j.Ops_Decrypt, []string{"decrypt"}},
+	//{j.Ops_WrapKey, []string{"wrapKey"}},
+	//{j.Ops_UnwrapKey, []string{"unwrapKey"}},
+	//{j.Ops_DeriveKey, []string{"deriveKey"}},
+	//{j.Ops_DeriveBits, []string{"deriveBits"}},
+	{j.Ops_Combo_SignVerify, []string{"sign", "verify"}},
+	//{j.OpsCombo_EncryptDecrypt, []string{"encrypt", "decrypt"}},
+	//{j.OpsCombo_WrapKeyUnwrapKey, []string{"wrapKey", "unwrapKey"}},
+}
+
+var not_implemented_key_ops = []j.JWKKeyOpFlag{
+	j.Ops_Encrypt,
+	j.Ops_Decrypt,
+	j.Ops_WrapKey,
+	j.Ops_UnwrapKey,
+	j.Ops_DeriveKey,
+	j.Ops_DeriveBits,
+	//j.OpsCombo_EncryptDecrypt,
+	//j.OpsCombo_WrapKeyUnwrapKey,
+}
+
+func Test__Correctly_set_valid_key_ops(t *testing.T) {
+	for i, test := range key_ops_tests {
+		ops := &j.WebKeyDef{}
+		if !NoError(t, j.Ops(test.flag)(ops), "set key ops [ %d ]", i) {
+			return
 		}
-		for i, k := range keys {
-			found := false
+		for i, k := range test.keys {
 			for _, op := range ops.KeyOperations {
 				if k == op {
-					found = true
-					break
+					goto NEXT
 				}
 			}
-			if !found {
-				t.Errorf("Expected key @ [ %d | %b ] == [ %s ] but found set [ %s ]", i, uint64(op), k, ops.KeyOperations)
-			}
-		}
-	}
-	test(j.Ops_Sign, []string{"sign"})
-	test(j.Ops_Verify, []string{"verify"})
-	// TODO: Add these back as implemented
-	//test(j.Ops_Encrypt, []string{"encrypt"})
-	//test(j.Ops_Decrypt, []string{"decrypt"})
-	//test(j.Ops_WrapKey, []string{"wrapKey"})
-	//test(j.Ops_UnwrapKey, []string{"unwrapKey"})
-	//test(j.Ops_DeriveKey, []string{"deriveKey"})
-	//test(j.Ops_DeriveBits, []string{"deriveBits"})
-
-	test(j.Ops_Combo_SignVerify, []string{"sign", "verify"})
-	//test(j.OpsCombo_EncryptDecrypt, []string{"encrypt", "decrypt"})
-	//test(j.OpsCombo_WrapKeyUnwrapKey, []string{"wrapKey", "unwrapKey"})
-}
-
-func Test_Should_fail_unsupported_key_ops(t *testing.T) {
-	var ops *j.WebKeyDef
-	test := func(op j.JWKKeyOpFlag) {
-		ops = &j.WebKeyDef{}
-		if err := j.Ops(op)(ops); !ExpectError(t, j.ErrNotImplemented, err) {
-			return
-		}
-	} // Shouldn't allow use of placeholder features
-	test(j.Ops_Encrypt)
-	test(j.Ops_Decrypt)
-	test(j.Ops_WrapKey)
-	test(j.Ops_UnwrapKey)
-	test(j.Ops_DeriveKey)
-	test(j.Ops_DeriveBits)
-}
-
-func Test_Should_fail_invalid_key_ops(t *testing.T) {
-	var ops *j.WebKeyDef
-	test := func(op j.JWKKeyOpFlag) {
-		ops = &j.WebKeyDef{}
-		if err := j.Ops(op)(ops); !ExpectError(t, j.ErrInvalidKeyOps, err) {
-			return
-		}
-	} // Shouldn't allow mixing of ops with different purposes
-	l := []j.JWKKeyOpFlag{j.Ops_Sign, j.Ops_Verify}
-	r := []j.JWKKeyOpFlag{} // TODO: Check these as features are implemented
-	for _, lv := range l {
-		for _, rv := range r {
-			test(lv | rv)
+			Fail(t, "Expected key @ [ %b ] == [ %s ] but found set [ %s ]", i, k, ops.KeyOperations)
+			break
+		NEXT:
 		}
 	}
 }
 
-func Test_Should_initialize_TokenDef_with_correct_error(t *testing.T) {
+func Test__Fail_unsupported_key_ops(t *testing.T) {
+	for i, op := range not_implemented_key_ops {
+		ops := &j.WebKeyDef{}
+		EqualError(t, j.Ops(op)(ops), j.ErrNotImplemented.Error(), "%d", i)
+	}
+}
+
+var invalid_key_op_combos = []struct {
+	initial j.JWKKeyOpFlag
+	invalid j.JWKKeyOpFlag
+}{
+	{j.Ops_Sign, j.Ops_Encrypt},
+	{j.Ops_Sign, j.Ops_Decrypt},
+	{j.Ops_Sign, j.Ops_DeriveKey},
+	{j.Ops_Sign, j.Ops_DeriveBits},
+	{j.Ops_Verify, j.Ops_Encrypt},
+	{j.Ops_Verify, j.Ops_Decrypt},
+	{j.Ops_Verify, j.Ops_DeriveKey},
+	{j.Ops_Verify, j.Ops_DeriveBits},
+}
+
+func Test__Fail_invalid_key_ops(t *testing.T) {
+	t.Skip("No conflicting options implemented yet")
+	for i, v := range invalid_key_op_combos {
+		EqualError(t, j.Ops(v.initial|v.invalid)(&j.WebKeyDef{}), j.ErrInvalidKeyOps.Error(), "check invalid ops [ %d ]", i)
+	}
+}
+
+func Test__Fail_invalid_key_ops_cumulative(t *testing.T) {
+	t.Skip("No conflicting options implemented yet")
+	for i, v := range invalid_key_op_combos {
+		ops := &j.WebKeyDef{} // Start with valid set
+		if !NoError(t, j.Ops(v.initial)(ops), "setup initial ops [ %d ]", i) {
+			return
+		} // Try to append invalid component
+		EqualError(t, j.Ops(v.invalid)(ops), j.ErrInvalidKeyOps.Error(), "check invalid ops [ %d ]", i)
+	}
+}
+
+func Test__Initialize_TokenDef_with_correct_error(t *testing.T) {
 	jwt := j.NewEmptyToken()
 	errs := jwt.GetErrors()
-	l := len(errs)
-	if l != 1 {
-		t.Errorf("Invalid number of errors [ %d ] on new TokenDef [ %s ]", l, errs)
+	if Len(t, errs, 1, "invalid number of errors [ %s ]", errs) &&
+		EqualError(t, errs[0], j.ErrUnitializedToken.Error()) {
 		return
-	}
-	if errs[0] != j.ErrUnitializedToken {
-		t.Errorf("Incorrect initial error state for new TokenDef [ %s ]", errs[0])
 	}
 }
 
-func Test_Should_return_error_when_decoding_with_unsupported_none_algo(t *testing.T) {
+func Test__Return_error_when_decoding_with_unsupported_none_algo(t *testing.T) {
 	jwt := j.New(rem_none)
 	token, err := jwt.GetToken()
-	ExpectNilError(t, "Making sample jwt", err)
+	if !NoError(t, err, "making sample jwt") {
+		return
+	}
 	jwt_parsed, err := j.Decode(token)
-	if !ExpectError(t, j.ErrInvalidAlgorithm, err) {
-		return
-	}
-	if !ExpectErrors(t, jwt_parsed.GetErrors(), j.ErrInvalidAlgorithm) {
-		return
+	if Nil(t, jwt_parsed, "decode should have failed") &&
+		EqualError(t, err, j.ErrInvalidAlgorithm.Error(), "decode step") {
 	}
 }
 
-func Test_Should_decode_allowed_none_algo(t *testing.T) {
+func Test__Decode_allowed_none_algo(t *testing.T) {
 	jwt := j.New(rem_none)
 	token, err := jwt.GetToken()
-	ExpectNilError(t, "Making sample jwt", err)
-	_, err = j.Decode(token, rem_none)
-	if !ExpectNilError(t, "Decode token with none algo", err) {
+	if !NoError(t, err, "making sample none algo jwt") {
 		return
 	}
+	_, err = j.Decode(token, rem_none)
+	NoError(t, err, "decode token with none algo")
 }
 
-func Test_Should_build_and_parse_valid_token(t *testing.T) {
+func Test__Build_and_parse_valid_token(t *testing.T) {
 	jwt := j.New(
 		j.UseConstraints(j.CONST_None_Algo),
 		j.Id(fmt.Sprintf("%X", uint64(3000))),
 	)
-	if !ExpectNilErrors(t, "Build valid token", jwt.GetErrors()) {
+	if !Nil(t, jwt.GetErrors(), "build valid token") {
 		return
 	}
 	token, err := jwt.GetToken()
-	ExpectNilError(t, "Making sample jwt", err)
+	if !NoError(t, err, "making sample valid jwt") {
+		return
+	}
 	jwt_parsed, err := j.Decode(token, rem_none)
-	if !ExpectNilError(t, "Parsing jwt token", err) {
-		return
+	if NoError(t, err, "parsing jwt token") &&
+		True(t, jwt.Equals(jwt_parsed), "expected [ %#v ] but was [ %#v ]", jwt, jwt_parsed) {
 	}
-	if !jwt.Equals(jwt_parsed) {
-		t.Errorf("Expected [\n%#v\n] but was [\n%#v\n]", jwt, jwt_parsed)
-		return
-	}
+}
+
+// JWK Tests
+
+func Test__JWK_ToStrings_dont_error(t *testing.T) {
+	k := j.WebKeyDef{}
+	k_s := k.String()
+	NotEmpty(t, k_s)
+	ks := j.NewWebKeySet(k, k)
+	k_s = ks.String()
+	NotEmpty(t, k_s)
+}
+
+// JWT Tests
+
+func Test_JWT_ToStrings_dont_error(t *testing.T) {
+	h := &j.HeaderDef{}
+	h_s := h.String()
+	NotEmpty(t, h_s)
+	p := &j.PayloadDef{}
+	p_s := p.String()
+	NotEmpty(t, p_s)
 }
 
 // Utility function tests
 
-func Test_Should_clone_payload(t *testing.T) {
+func Test__Clone_payload(t *testing.T) {
 	jwt := j.New(j.Id("10"))
 	p := jwt.GetPayload()
 
-	Equals(t, "10", p.Id, "Should have cloned data into new payload")
+	Equal(t, "10", p.Id, "Should have cloned data into new payload")
 }
 
-func Test_Should_clone_map(t *testing.T) {
+func Test__Clone_interface(t *testing.T) {
+	type thing struct {
+		value string
+		other int
+	}
+	v_in := &thing{"asdf", 10}
+	var v_out *thing
+	j.CloneInterface(v_in, v_out)
+}
+
+func Test__Clone_map(t *testing.T) {
 	m := make(map[string]interface{})
 	m["key1"] = "value1"
 
 	var m2 map[string]interface{}
 	j.CloneMap(m, &m2)
 
-	Equals(t, "value1", m["key1"], "Should have retained initial values")
-	Equals(t, "value1", m2["key1"], "Should have cloned values into new map")
-
+	if !Equal(t, "value1", m["key1"], "Should have retained initial values") ||
+		!Equal(t, "value1", m2["key1"], "Should have cloned values into new map") {
+		return
+	}
 	m2["key1"] = "value2"
-
-	Equals(t, "value1", m["key1"], "Should have retained initial values after update")
-	Equals(t, "value2", m2["key1"], "Should have modifeid values in new map")
-
+	if !Equal(t, "value1", m["key1"], "Should have retained initial values after update") ||
+		!Equal(t, "value2", m2["key1"], "Should have modifeid values in new map") {
+		return
+	}
 	m["key1"] = "value3"
-
-	Equals(t, "value3", m["key1"], "Should have modifeid values in old map")
-	Equals(t, "value2", m2["key1"], "Should have retained initial values after update")
+	if !Equal(t, "value3", m["key1"], "Should have modifeid values in old map") ||
+		!Equal(t, "value2", m2["key1"], "Should have retained initial values after update") {
+	}
 }
 
 /* TODO: Other properties to validate:

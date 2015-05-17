@@ -27,6 +27,7 @@ var (
 	ErrSignatureValidationFailed = errors.New("signature validation failed")
 	ErrUnitializedToken          = errors.New("uninitialized token cannot be used")
 	ErrRequiredElementWasNil     = errors.New("required token def element was nil")
+	ErrProvidedDataWasNil        = errors.New("provided data structure was nil")
 )
 
 type ErrEncodeInvalidTokenDef struct {
@@ -318,6 +319,9 @@ func CloneInterface(in interface{}, out interface{}) {
 				return
 			}
 		}
+	}
+	if err == io.EOF {
+		return
 	}
 	panic(err)
 }
